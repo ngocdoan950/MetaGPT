@@ -6,54 +6,30 @@
 @File    : test_write_code_review.py
 """
 import pytest
-
+from metagpt.logs import logger
+from metagpt.llm import LLM
 from metagpt.actions.write_code_review import WriteCodeReview
-from metagpt.schema import CodingContext, Document
+from tests.metagpt.actions.mock import SEARCH_CODE_SAMPLE
 
 
 @pytest.mark.asyncio
-async def test_write_code_review(capfd, context):
-    context.src_workspace = context.repo.workdir / "srcs"
+async def test_write_code_review():
     code = """
 def add(a, b):
-    return a + 
+    return a + b
 """
-    coding_context = CodingContext(
-        filename="math.py", design_doc=Document(content="编写一个从a加b的函数，返回a+b"), code_doc=Document(content=code)
-    )
+    write_code_review = WriteCodeReview("write_code_review")
 
-    await WriteCodeReview(i_context=coding_context, context=context).run()
+    review = await write_code_review.run(code)
 
     # 我们不能精确地预测生成的代码评审，但我们可以检查返回的是否为字符串
-    assert isinstance(coding_context.code_doc.content, str)
-    assert len(coding_context.code_doc.content) > 0
-
-    captured = capfd.readouterr()
-    print(f"输出内容: {captured.out}")
+    assert isinstance(review, str)
+    assert len(review) > 0
 
 
 @pytest.mark.asyncio
-async def test_write_code_review_inc(capfd, context):
-    context.src_workspace = context.repo.workdir / "srcs"
-    context.config.inc = True
-    code = """
-    def add(a, b):
-        return a + 
-    """
-    code_plan_and_change = """
-    def add(a, b):
--        return a + 
-+        return a + b
-    """
-    coding_context = CodingContext(
-        filename="math.py",
-        design_doc=Document(content="编写一个从a加b的函数，返回a+b"),
-        code_doc=Document(content=code),
-        code_plan_and_change_doc=Document(content=code_plan_and_change),
-    )
-
-    await WriteCodeReview(i_context=coding_context, context=context).run()
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-s"])
+async def test_write_code_review_directly():
+    code = SEARCH_CODE_SAMPLE
+    write_code_review = WriteCodeReview("write_code_review")
+    review = await write_code_review.run(code)
+    logger.info(review)

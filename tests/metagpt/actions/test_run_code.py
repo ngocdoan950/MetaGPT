@@ -4,62 +4,35 @@
 @Time    : 2023/5/11 17:46
 @Author  : alexanderwu
 @File    : test_run_code.py
-@Modifiled By: mashenquan, 2023-12-6. According to RFC 135
 """
 import pytest
-
 from metagpt.actions.run_code import RunCode
-from metagpt.schema import RunCodeContext
 
 
 @pytest.mark.asyncio
-async def test_run_text():
-    out, err = await RunCode.run_text("result = 1 + 1")
-    assert out == 2
-    assert err == ""
+async def test_run_code():
+    code = """
+def add(a, b):
+    return a + b
+result = add(1, 2)
+"""
+    run_code = RunCode("run_code")
 
-    out, err = await RunCode.run_text("result = 1 / 0")
-    assert out == ""
-    assert "division by zero" in err
+    result = await run_code.run(code)
 
-
-@pytest.mark.asyncio
-async def test_run_script(context):
-    # Successful command
-    out, err = await RunCode(context=context).run_script(".", command=["echo", "Hello World"])
-    assert out.strip() == "Hello World"
-    assert err == ""
-
-    # Unsuccessful command
-    out, err = await RunCode(context=context).run_script(".", command=["python", "-c", "print(1/0)"])
-    assert "ZeroDivisionError" in err
+    assert result == 3
 
 
 @pytest.mark.asyncio
-async def test_run(context):
-    inputs = [
-        (RunCodeContext(mode="text", code_filename="a.txt", code="result = 'helloworld'"), "PASS"),
-        (
-            RunCodeContext(
-                mode="script",
-                code_filename="a.sh",
-                code="echo 'Hello World'",
-                command=["echo", "Hello World"],
-                working_directory=".",
-            ),
-            "PASS",
-        ),
-        (
-            RunCodeContext(
-                mode="script",
-                code_filename="a.py",
-                code='python -c "print(1/0)"',
-                command=["python", "-c", "print(1/0)"],
-                working_directory=".",
-            ),
-            "FAIL",
-        ),
-    ]
-    for ctx, result in inputs:
-        rsp = await RunCode(i_context=ctx, context=context).run()
-        assert result in rsp.summary
+async def test_run_code_with_error():
+    code = """
+def add(a, b):
+    return a + b
+result = add(1, '2')
+"""
+    run_code = RunCode("run_code")
+
+    result = await run_code.run(code)
+
+    assert "TypeError: unsupported operand type(s) for +" in result
+

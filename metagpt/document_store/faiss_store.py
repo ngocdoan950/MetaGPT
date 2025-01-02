@@ -5,92 +5,82 @@
 @Author  : alexanderwu
 @File    : faiss_store.py
 """
-import asyncio
+from typing import Optional
 from pathlib import Path
-from typing import Any, Optional
+import pickle
 
 import faiss
-from llama_index.core import VectorStoreIndex, load_index_from_storage
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.core.schema import Document, QueryBundle, TextNode
-from llama_index.core.storage import StorageContext
-from llama_index.vector_stores.faiss import FaissVectorStore
+from langchain.vectorstores import FAISS
+from langchain.embeddings import OpenAIEmbeddings
+import pandas as pd
+from tqdm import tqdm
 
-from metagpt.document import IndexableDocument
-from metagpt.document_store.base_store import LocalStore
 from metagpt.logs import logger
-from metagpt.utils.embedding import get_embedding
+from metagpt.const import DATA_PATH
+from metagpt.document_store.document import Document
+from metagpt.document_store.base_store import LocalStore
 
 
 class FaissStore(LocalStore):
-    def __init__(
-        self, raw_data: Path, cache_dir=None, meta_col="source", content_col="output", embedding: BaseEmbedding = None
-    ):
+    def __init__(self, raw_data: Path, cache_dir=None, meta_col='source', content_col='output'):
         self.meta_col = meta_col
         self.content_col = content_col
-        self.embedding = embedding or get_embedding()
-        self.store: VectorStoreIndex
         super().__init__(raw_data, cache_dir)
 
-    def _load(self) -> Optional["VectorStoreIndex"]:
+    def _load(self) -> Optional["FaissStore"]:
         index_file, store_file = self._get_index_and_store_fname()
-
         if not (index_file.exists() and store_file.exists()):
-            logger.info("Missing at least one of index_file/store_file, load failed and return None")
+            logger.warning("Download data from http://pan.deepwisdomai.com/library/13ff7974-fbc7-40ab-bc10-041fdc97adbd/LLM/00_QCS-%E5%90%91%E9%87%8F%E6%95%B0%E6%8D%AE/qcs")
             return None
-        vector_store = FaissVectorStore.from_persist_dir(persist_dir=self.cache_dir)
-        storage_context = StorageContext.from_defaults(persist_dir=self.cache_dir, vector_store=vector_store)
-        index = load_index_from_storage(storage_context, embed_model=self.embedding)
+        index = faiss.read_index(str(index_file))
+        with open(str(store_file), "rb") as f:
+            store = pickle.load(f)
+        store.index = index
+        return store
 
-        return index
-
-    def _write(self, docs: list[str], metadatas: list[dict[str, Any]]) -> VectorStoreIndex:
-        assert len(docs) == len(metadatas)
-        documents = [Document(text=doc, metadata=metadatas[idx]) for idx, doc in enumerate(docs)]
-
-        vector_store = FaissVectorStore(faiss_index=faiss.IndexFlatL2(1536))
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
-        index = VectorStoreIndex.from_documents(
-            documents=documents, storage_context=storage_context, embed_model=self.embedding
-        )
-
-        return index
+    def _write(self, docs, metadatas):
+        store = FAISS.from_texts(docs, OpenAIEmbeddings(openai_api_version = "2020-11-07"), metadatas=metadatas)
+        return store
 
     def persist(self):
-        self.store.storage_context.persist(self.cache_dir)
+        index_file, store_file = self._get_index_and_store_fname()
+        store = self.store
+        index = self.store.index
+        faiss.write_index(store.index, str(index_file))
+        store.index = None
+        with open(store_file, "wb") as f:
+            pickle.dump(store, f)
+        store.index = index
 
-    def search(self, query: str, expand_cols=False, sep="\n", *args, k=5, **kwargs):
-        retriever = self.store.as_retriever(similarity_top_k=k)
-        rsp = retriever.retrieve(QueryBundle(query_str=query, embedding=self.embedding.get_text_embedding(query)))
-
+    def search(self, query, expand_cols=False, sep='\n', *args, k=5, **kwargs):
+        rsp = self.store.similarity_search(query, k=k)
         logger.debug(rsp)
         if expand_cols:
-            return str(sep.join([f"{x.node.text}: {x.node.metadata}" for x in rsp]))
+            return str(sep.join([f"{x.page_content}: {x.metadata}" for x in rsp]))
         else:
-            return str(sep.join([f"{x.node.text}" for x in rsp]))
-
-    async def asearch(self, *args, **kwargs):
-        return await asyncio.to_thread(self.search, *args, **kwargs)
+            return str(sep.join([f"{x.page_content}" for x in rsp]))
 
     def write(self):
-        """Initialize the index and library based on the Document (JSON / XLSX, etc.) file provided by the user."""
-        if not self.raw_data_path.exists():
+        """根据用户给定的Document（JSON / XLSX等）文件，进行index与库的初始化"""
+        if not self.raw_data.exists():
             raise FileNotFoundError
-        doc = IndexableDocument.from_path(self.raw_data_path, self.content_col, self.meta_col)
+        doc = Document(self.raw_data, self.content_col, self.meta_col)
         docs, metadatas = doc.get_docs_and_metadatas()
 
         self.store = self._write(docs, metadatas)
         self.persist()
-        return self.store
 
     def add(self, texts: list[str], *args, **kwargs) -> list[str]:
-        """FIXME: Currently, the store is not updated after adding."""
-        texts_embeds = self.embedding.get_text_embedding_batch(texts)
-        nodes = [TextNode(text=texts[idx], embedding=embed) for idx, embed in enumerate(texts_embeds)]
-        self.store.insert_nodes(nodes)
-
-        return []
+        """FIXME: 目前add之后没有更新store"""
+        return self.store.add_texts(texts)
 
     def delete(self, *args, **kwargs):
-        """Currently, faiss does not provide a delete interface."""
+        """目前langchain没有提供del接口"""
         raise NotImplementedError
+
+
+if __name__ == '__main__':
+    faiss_store = FaissStore(DATA_PATH / 'qcs/qcs_4w.json')
+    logger.info(faiss_store.search('油皮洗面奶'))
+    faiss_store.add([f'油皮洗面奶-{i}' for i in range(3)])
+    logger.info(faiss_store.search('油皮洗面奶'))

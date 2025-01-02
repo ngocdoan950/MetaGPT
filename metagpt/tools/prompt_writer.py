@@ -5,46 +5,46 @@
 @Author  : alexanderwu
 @File    : prompt_writer.py
 """
+from abc import ABC
 from typing import Union
 
 
 class GPTPromptGenerator:
-    """Using LLM, given an output, request LLM to provide input (supporting instruction, chatbot, and query styles)"""
-
+    """通过LLM，给定输出，要求LLM给出输入（支持指令、对话、搜索三种风格）"""
     def __init__(self):
-        self._generators = {i: getattr(self, f"gen_{i}_style") for i in ["instruction", "chatbot", "query"]}
+        self._generators = {i: getattr(self, f"gen_{i}_style") for i in ['instruction', 'chatbot', 'query']}
 
     def gen_instruction_style(self, example):
-        """Instruction style: Given an output, request LLM to provide input"""
-        return f"""Instruction: X
-Output: {example}
-What kind of instruction might this output come from?
-X:"""
+        """指令风格：给定输出，要求LLM给出输入"""
+        return f"""指令：X
+输出：{example}
+这个输出可能来源于什么样的指令？
+X："""
 
     def gen_chatbot_style(self, example):
-        """Chatbot style: Given an output, request LLM to provide input"""
-        return f"""You are a chatbot. A user sent you an informal message, and you replied as follows.
-Message: X
-Reply: {example}
-What could the informal message X be?
-X:"""
+        """对话风格：给定输出，要求LLM给出输入"""
+        return f"""你是一个对话机器人。一个用户给你发送了一条非正式的信息，你的回复如下。
+信息：X
+回复：{example}
+非正式信息X是什么？
+X："""
 
     def gen_query_style(self, example):
-        """Query style: Given an output, request LLM to provide input"""
-        return f"""You are a search engine. Someone made a detailed query, and the most relevant document to this query is as follows.
-Query: X
-Document: {example} What is the detailed query X?
-X:"""
+        """搜索风格：给定输出，要求LLM给出输入"""
+        return f"""你是一个搜索引擎。一个人详细地查询了某个问题，关于这个查询最相关的文档如下。
+查询：X
+文档：{example} 详细的查询X是什么？
+X："""
 
-    def gen(self, example: str, style: str = "all") -> Union[list[str], str]:
+    def gen(self, example: str, style: str = 'all') -> Union[list[str], str]:
         """
-        Generate one or multiple outputs using the example, allowing LLM to reply with the corresponding input
+        通过example生成一个或多个输出，用于让LLM回复对应输入
 
-        :param example: Expected LLM output sample
+        :param example: LLM的预期输出样本
         :param style: (all|instruction|chatbot|query)
-        :return: Expected LLM input sample (one or multiple)
+        :return: LLM的预期输入样本（一个或多个）
         """
-        if style != "all":
+        if style != 'all':
             return self._generators[style](example)
         return [f(example) for f in self._generators.values()]
 

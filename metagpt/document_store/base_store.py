@@ -8,12 +8,14 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from metagpt.config import Config
+
 
 class BaseStore(ABC):
-    """FIXME: consider add_index, set_index and think about granularity."""
+    """FIXME: consider add_index, set_index and think 颗粒度"""
 
     @abstractmethod
-    def search(self, *args, **kwargs):
+    def search(self, query, *args, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
@@ -26,21 +28,22 @@ class BaseStore(ABC):
 
 
 class LocalStore(BaseStore, ABC):
-    def __init__(self, raw_data_path: Path, cache_dir: Path = None):
-        if not raw_data_path:
+    def __init__(self, raw_data: Path, cache_dir: Path = None):
+        if not raw_data:
             raise FileNotFoundError
-        self.raw_data_path = raw_data_path
-        self.fname = self.raw_data_path.stem
+        self.config = Config()
+        self.raw_data = raw_data
         if not cache_dir:
-            cache_dir = raw_data_path.parent
+            cache_dir = raw_data.parent
         self.cache_dir = cache_dir
         self.store = self._load()
         if not self.store:
             self.store = self.write()
 
-    def _get_index_and_store_fname(self, index_ext=".json", docstore_ext=".json"):
-        index_file = self.cache_dir / "default__vector_store" / index_ext
-        store_file = self.cache_dir / "docstore" / docstore_ext
+    def _get_index_and_store_fname(self):
+        fname = self.raw_data.name.split('.')[0]
+        index_file = self.cache_dir / f"{fname}.index"
+        store_file = self.cache_dir / f"{fname}.pkl"
         return index_file, store_file
 
     @abstractmethod

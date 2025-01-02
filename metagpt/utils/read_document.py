@@ -10,13 +10,13 @@ import docx
 
 
 def read_docx(file_path: str) -> list:
-    """Open a docx file"""
+    """打开docx文件"""
     doc = docx.Document(file_path)
 
-    # Create an empty list to store paragraph contents
+    # 创建一个空列表，用于存储段落内容
     paragraphs_list = []
 
-    # Iterate through the paragraphs in the document and add their content to the list
+    # 遍历文档中的段落，并将其内容添加到列表中
     for paragraph in doc.paragraphs:
         paragraphs_list.append(paragraph.text)
 

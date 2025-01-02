@@ -5,141 +5,122 @@
 @Author  : alexanderwu
 @File    : search_engine.py
 """
-import importlib
-from typing import Annotated, Callable, Coroutine, Literal, Optional, Union, overload
+from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import json
 
-from metagpt.configs.search_config import SearchConfig
 from metagpt.logs import logger
+from duckduckgo_search import ddg
+
+from metagpt.config import Config
+from metagpt.tools.search_engine_serpapi import SerpAPIWrapper
+
+config = Config()
 from metagpt.tools import SearchEngineType
 
 
-class SearchEngine(BaseModel):
-    """A model for configuring and executing searches with different search engines.
-
-    Attributes:
-        model_config: Configuration for the model allowing arbitrary types.
-        engine: The type of search engine to use.
-        run_func: An optional callable for running the search. If not provided, it will be determined based on the engine.
-        api_key: An optional API key for the search engine.
-        proxy: An optional proxy for the search engine requests.
+class SearchEngine:
     """
+    TODO: 合入Google Search 并进行反代
+    注：这里Google需要挂Proxifier或者类似全局代理
+    - DDG: https://pypi.org/project/duckduckgo-search/
+    - GOOGLE: https://programmablesearchengine.google.com/controlpanel/overview?cx=63f9de531d0e24de9
+    """
+    def __init__(self, engine=None, run_func=None):
+        self.config = Config()
+        self.run_func = run_func
+        self.engine = engine or self.config.search_engine
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    @classmethod
+    def run_google(cls, query, max_results=8):
+        # results = ddg(query, max_results=max_results)
+        results = google_official_search(query, num_results=max_results)
+        logger.info(results)
+        return results
 
-    engine: SearchEngineType = SearchEngineType.SERPER_GOOGLE
-    run_func: Annotated[
-        Optional[Callable[[str, int, bool], Coroutine[None, None, Union[str, list[str]]]]], Field(exclude=True)
-    ] = None
-    api_key: Optional[str] = None
-    proxy: Optional[str] = None
-
-    @model_validator(mode="after")
-    def validate_extra(self):
-        """Validates extra fields provided to the model and updates the run function accordingly."""
-        data = self.model_dump(exclude={"engine"}, exclude_none=True, exclude_defaults=True)
-        if self.model_extra:
-            data.update(self.model_extra)
-        self._process_extra(**data)
-        return self
-
-    def _process_extra(
-        self,
-        run_func: Optional[Callable[[str, int, bool], Coroutine[None, None, Union[str, list[str]]]]] = None,
-        **kwargs,
-    ):
-        """Processes extra configuration and updates the run function based on the search engine type.
-
-        Args:
-            run_func: An optional callable for running the search. If not provided, it will be determined based on the engine.
-        """
+    async def run(self, query, max_results=8):
         if self.engine == SearchEngineType.SERPAPI_GOOGLE:
-            module = "metagpt.tools.search_engine_serpapi"
-            run_func = importlib.import_module(module).SerpAPIWrapper(**kwargs).run
-        elif self.engine == SearchEngineType.SERPER_GOOGLE:
-            module = "metagpt.tools.search_engine_serper"
-            run_func = importlib.import_module(module).SerperWrapper(**kwargs).run
+            api = SerpAPIWrapper()
+            rsp = await api.run(query)
         elif self.engine == SearchEngineType.DIRECT_GOOGLE:
-            module = "metagpt.tools.search_engine_googleapi"
-            run_func = importlib.import_module(module).GoogleAPIWrapper(**kwargs).run
-        elif self.engine == SearchEngineType.DUCK_DUCK_GO:
-            module = "metagpt.tools.search_engine_ddg"
-            run_func = importlib.import_module(module).DDGAPIWrapper(**kwargs).run
+            rsp = SearchEngine.run_google(query, max_results)
         elif self.engine == SearchEngineType.CUSTOM_ENGINE:
-            run_func = self.run_func
-        elif self.engine == SearchEngineType.BING:
-            module = "metagpt.tools.search_engine_bing"
-            run_func = importlib.import_module(module).BingAPIWrapper(**kwargs).run
+            rsp = self.run_func(query)
         else:
             raise NotImplementedError
-        self.run_func = run_func
+        return rsp
 
-    @classmethod
-    def from_search_config(cls, config: SearchConfig, **kwargs):
-        """Creates a SearchEngine instance from a SearchConfig.
 
-        Args:
-            config: The search configuration to use for creating the SearchEngine instance.
-        """
-        data = config.model_dump(exclude={"api_type", "search_func"})
-        if config.search_func is not None:
-            data["run_func"] = config.search_func
+def google_official_search(query: str, num_results: int = 8, focus=['snippet', 'link', 'title']) -> dict | list[dict]:
+    """Return the results of a Google search using the official Google API
 
-        return cls(engine=config.api_type, **data, **kwargs)
+    Args:
+        query (str): The search query.
+        num_results (int): The number of results to return.
 
-    @classmethod
-    def from_search_func(
-        cls, search_func: Callable[[str, int, bool], Coroutine[None, None, Union[str, list[str]]]], **kwargs
-    ):
-        """Creates a SearchEngine instance from a custom search function.
+    Returns:
+        str: The results of the search.
+    """
 
-        Args:
-            search_func: A callable that executes the search.
-        """
-        return cls(engine=SearchEngineType.CUSTOM_ENGINE, run_func=search_func, **kwargs)
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
 
-    @overload
-    def run(
-        self,
-        query: str,
-        max_results: int = 8,
-        as_string: Literal[True] = True,
-    ) -> str:
-        ...
+    try:
+        api_key = config.google_api_key
+        custom_search_engine_id = config.google_cse_id
 
-    @overload
-    def run(
-        self,
-        query: str,
-        max_results: int = 8,
-        as_string: Literal[False] = False,
-    ) -> list[dict[str, str]]:
-        ...
+        service = build("customsearch", "v1", developerKey=api_key)
 
-    async def run(
-        self,
-        query: str,
-        max_results: int = 8,
-        as_string: bool = True,
-        ignore_errors: bool = False,
-    ) -> Union[str, list[dict[str, str]]]:
-        """Run a search query.
+        result = (
+            service.cse()
+            .list(q=query, cx=custom_search_engine_id, num=num_results)
+            .execute()
+        )
 
-        Args:
-            query: The search query.
-            max_results: The maximum number of results to return. Defaults to 8.
-            as_string: Whether to return the results as a string or a list of dictionaries. Defaults to True.
-            ignore_errors: Whether to ignore errors during the search. Defaults to False.
+        # Extract the search result items from the response
+        search_results = result.get("items", [])
 
-        Returns:
-            The search results as a string or a list of dictionaries.
-        """
-        try:
-            return await self.run_func(query, max_results=max_results, as_string=as_string)
-        except Exception as e:
-            # Handle errors in the API call
-            logger.exception(f"fail to search {query} for {e}")
-            if not ignore_errors:
-                raise e
-            return "" if as_string else []
+        # Create a list of only the URLs from the search results
+        search_results_details = [{i: j for i, j in item_dict.items() if i in focus} for item_dict in search_results]
+
+    except HttpError as e:
+        # Handle errors in the API call
+        error_details = json.loads(e.content.decode())
+
+        # Check if the error is related to an invalid or missing API key
+        if error_details.get("error", {}).get(
+            "code"
+        ) == 403 and "invalid API key" in error_details.get("error", {}).get(
+            "message", ""
+        ):
+            return "Error: The provided Google API key is invalid or missing."
+        else:
+            return f"Error: {e}"
+    # google_result can be a list or a string depending on the search results
+
+    # Return the list of search result URLs
+    return search_results_details
+
+
+def safe_google_results(results: str | list) -> str:
+    """
+        Return the results of a google search in a safe format.
+
+    Args:
+        results (str | list): The search results.
+
+    Returns:
+        str: The results of the search.
+    """
+    if isinstance(results, list):
+        safe_message = json.dumps(
+            # FIXME: # .encode("utf-8", "ignore") 这里去掉了，但是AutoGPT里有，很奇怪
+            [result for result in results]
+        )
+    else:
+        safe_message = results.encode("utf-8", "ignore").decode("utf-8")
+    return safe_message
+
+
+if __name__ == '__main__':
+    SearchEngine.run(query='wtf')

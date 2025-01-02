@@ -6,14 +6,14 @@
 @File    : test_project_manager.py
 """
 import pytest
-
 from metagpt.logs import logger
 from metagpt.roles import ProjectManager
-from tests.metagpt.roles.mock import MockMessages
+from metagpt.schema import Message
+from tests.metagpt.roles.mock import SYSTEM_DESIGN, MockMessages
 
 
 @pytest.mark.asyncio
-async def test_project_manager(context):
-    project_manager = ProjectManager(context=context)
-    rsp = await project_manager.run(MockMessages.system_design)
+async def test_project_manager():
+    project_manager = ProjectManager()
+    rsp = await project_manager.handle(MockMessages.system_design)
     logger.info(rsp)

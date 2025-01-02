@@ -7,7 +7,6 @@
 """
 
 import pytest
-
 from metagpt.utils.common import CodeParser
 
 t_text = '''
@@ -111,30 +110,30 @@ class TestCodeParser:
     def test_parse_blocks(self, parser, text):
         result = parser.parse_blocks(text)
         print(result)
-        assert "game.py" in result["Task list"]
+        assert result == {"title": "content", "title2": "content2"}
 
     def test_parse_block(self, parser, text):
-        result = parser.parse_block("Task list", text)
+        result = parser.parse_block("title", text)
         print(result)
-        assert "game.py" in result
+        assert result == "content"
 
     def test_parse_code(self, parser, text):
-        result = parser.parse_code("Task list", text, "python")
+        result = parser.parse_code("title", text, "python")
         print(result)
-        assert "game.py" in result
+        assert result == "print('hello world')"
 
     def test_parse_str(self, parser, text):
-        result = parser.parse_str("Anything UNCLEAR", text, "python")
+        result = parser.parse_str("title", text, "python")
         print(result)
-        assert "We need clarification on how the high score " in result
+        assert result == "hello world"
 
     def test_parse_file_list(self, parser, text):
         result = parser.parse_file_list("Task list", text)
         print(result)
-        assert "game.py" in result
+        assert result == ['task1', 'task2']
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     t = TestCodeParser()
     t.test_parse_file_list(CodeParser(), t_text)
     # TestCodeParser.test_parse_file_list()

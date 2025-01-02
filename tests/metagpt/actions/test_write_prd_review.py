@@ -6,12 +6,11 @@
 @File    : test_write_prd_review.py
 """
 import pytest
-
 from metagpt.actions.write_prd_review import WritePRDReview
 
 
 @pytest.mark.asyncio
-async def test_write_prd_review(context):
+async def test_write_prd_review():
     prd = """
     Introduction: This is a new feature for our product.
     Goals: The goal is to improve user engagement.
@@ -23,14 +22,10 @@ async def test_write_prd_review(context):
     Timeline: The feature should be ready for testing in 1.5 months.
     """
 
-    write_prd_review = WritePRDReview(name="write_prd_review", context=context)
+    write_prd_review = WritePRDReview("write_prd_review")
 
     prd_review = await write_prd_review.run(prd)
 
     # We cannot exactly predict the generated PRD review, but we can check if it is a string and if it is not empty
     assert isinstance(prd_review, str)
     assert len(prd_review) > 0
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-s"])

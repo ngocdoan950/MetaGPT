@@ -5,54 +5,50 @@
 @Author  : alexanderwu
 @File    : search_engine_serpapi.py
 """
-import warnings
 from typing import Any, Dict, Optional, Tuple
-
+from metagpt.logs import logger
 import aiohttp
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field
+
+from metagpt.config import Config
 
 
 class SerpAPIWrapper(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    """Wrapper around SerpAPI.
 
-    api_key: str
+    To use, you should have the ``google-search-results`` python package installed,
+    and the environment variable ``SERPAPI_API_KEY`` set with your API key, or pass
+    `serpapi_api_key` as a named parameter to the constructor.
+    """
+
+    search_engine: Any  #: :meta private:
     params: dict = Field(
-        default_factory=lambda: {
+        default={
             "engine": "google",
             "google_domain": "google.com",
             "gl": "us",
             "hl": "en",
         }
     )
+    config = Config()
+    serpapi_api_key: Optional[str] = config.serpapi_api_key
     aiosession: Optional[aiohttp.ClientSession] = None
-    proxy: Optional[str] = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_serpapi(cls, values: dict) -> dict:
-        if "serpapi_api_key" in values:
-            values.setdefault("api_key", values["serpapi_api_key"])
-            warnings.warn("`serpapi_api_key` is deprecated, use `api_key` instead", DeprecationWarning, stacklevel=2)
+    class Config:
+        arbitrary_types_allowed = True
 
-        if "api_key" not in values:
-            raise ValueError(
-                "To use serpapi search engine, make sure you provide the `api_key` when constructing an object. You can obtain"
-                " an API key from https://serpapi.com/."
-            )
-        return values
-
-    async def run(self, query, max_results: int = 8, as_string: bool = True, **kwargs: Any) -> str:
+    async def run(self, query: str, **kwargs: Any) -> str:
         """Run query through SerpAPI and parse result async."""
-        result = await self.results(query, max_results)
-        return self._process_response(result, as_string=as_string)
+        return self._process_response(await self.results(query))
 
-    async def results(self, query: str, max_results: int) -> dict:
+    async def results(self, query: str) -> dict:
         """Use aiohttp to run query through SerpAPI and return the results async."""
 
         def construct_url_and_params() -> Tuple[str, Dict[str, str]]:
             params = self.get_params(query)
             params["source"] = "python"
-            params["num"] = max_results
+            if self.serpapi_api_key:
+                params["serp_api_key"] = self.serpapi_api_key
             params["output"] = "json"
             url = "https://serpapi.com/search"
             return url, params
@@ -60,12 +56,10 @@ class SerpAPIWrapper(BaseModel):
         url, params = construct_url_and_params()
         if not self.aiosession:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, proxy=self.proxy) as response:
-                    response.raise_for_status()
+                async with session.get(url, params=params) as response:
                     res = await response.json()
         else:
-            async with self.aiosession.get(url, params=params, proxy=self.proxy) as response:
-                response.raise_for_status()
+            async with self.aiosession.get(url, params=params) as response:
                 res = await response.json()
 
         return res
@@ -73,33 +67,39 @@ class SerpAPIWrapper(BaseModel):
     def get_params(self, query: str) -> Dict[str, str]:
         """Get parameters for SerpAPI."""
         _params = {
-            "api_key": self.api_key,
+            "api_key": self.serpapi_api_key,
             "q": query,
         }
         params = {**self.params, **_params}
         return params
 
     @staticmethod
-    def _process_response(res: dict, as_string: bool) -> str:
+    def _process_response(res: dict) -> str:
         """Process response from SerpAPI."""
         # logger.debug(res)
-        focus = ["title", "snippet", "link"]
+        focus = ['title', 'snippet', 'link']
         get_focused = lambda x: {i: j for i, j in x.items() if i in focus}
 
         if "error" in res.keys():
-            if res["error"] == "Google hasn't returned any results for this query.":
-                toret = "No good search result found"
-            else:
-                raise ValueError(f"Got error from SerpAPI: {res['error']}")
-        elif "answer_box" in res.keys() and "answer" in res["answer_box"].keys():
+            raise ValueError(f"Got error from SerpAPI: {res['error']}")
+        if "answer_box" in res.keys() and "answer" in res["answer_box"].keys():
             toret = res["answer_box"]["answer"]
         elif "answer_box" in res.keys() and "snippet" in res["answer_box"].keys():
             toret = res["answer_box"]["snippet"]
-        elif "answer_box" in res.keys() and "snippet_highlighted_words" in res["answer_box"].keys():
+        elif (
+            "answer_box" in res.keys()
+            and "snippet_highlighted_words" in res["answer_box"].keys()
+        ):
             toret = res["answer_box"]["snippet_highlighted_words"][0]
-        elif "sports_results" in res.keys() and "game_spotlight" in res["sports_results"].keys():
+        elif (
+            "sports_results" in res.keys()
+            and "game_spotlight" in res["sports_results"].keys()
+        ):
             toret = res["sports_results"]["game_spotlight"]
-        elif "knowledge_graph" in res.keys() and "description" in res["knowledge_graph"].keys():
+        elif (
+            "knowledge_graph" in res.keys()
+            and "description" in res["knowledge_graph"].keys()
+        ):
             toret = res["knowledge_graph"]["description"]
         elif "snippet" in res["organic_results"][0].keys():
             toret = res["organic_results"][0]["snippet"]
@@ -112,10 +112,4 @@ class SerpAPIWrapper(BaseModel):
         if res.get("organic_results"):
             toret_l += [get_focused(i) for i in res.get("organic_results")]
 
-        return str(toret) + "\n" + str(toret_l) if as_string else toret_l
-
-
-if __name__ == "__main__":
-    import fire
-
-    fire.Fire(SerpAPIWrapper().run)
+        return str(toret) + '\n' + str(toret_l)

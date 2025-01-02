@@ -4,36 +4,40 @@
 @Time    : 2023/6/5 01:44
 @Author  : alexanderwu
 @File    : skill_manager.py
-@Modified By: mashenquan, 2023/8/20. Remove useless `llm`
 """
-from metagpt.actions import Action
-from metagpt.const import PROMPT_PATH
-from metagpt.document_store.chromadb_store import ChromaStore
+from sentence_transformers import SentenceTransformer
 from metagpt.logs import logger
+
+from metagpt.const import PROMPT_PATH
+from metagpt.llm import LLM
+from metagpt.actions import Action
+from metagpt.document_store.chromadb_store import ChromaStore
+
 
 Skill = Action
 
 
 class SkillManager:
-    """Used to manage all skills"""
+    """用来管理所有技能"""
 
     def __init__(self):
-        self._store = ChromaStore("skill_manager")
-        self._skills: dict[str:Skill] = {}
+        self._llm = LLM()
+        self._store = ChromaStore('skill_manager')
+        self._skills: dict[str: Skill] = {}
 
     def add_skill(self, skill: Skill):
         """
-        Add a skill, add the skill to the skill pool and searchable storage
-        :param skill: Skill
+        增加技能，将技能加入到技能池与可检索的存储中
+        :param skill: 技能
         :return:
         """
         self._skills[skill.name] = skill
-        self._store.add(skill.desc, {"name": skill.name, "desc": skill.desc}, skill.name)
+        self._store.add(skill.desc, {}, skill.name)
 
     def del_skill(self, skill_name: str):
         """
-        Delete a skill, remove the skill from the skill pool and searchable storage
-        :param skill_name: Skill name
+        删除技能，将技能从技能池与可检索的存储中移除
+        :param skill_name: 技能名
         :return:
         """
         self._skills.pop(skill_name)
@@ -41,31 +45,31 @@ class SkillManager:
 
     def get_skill(self, skill_name: str) -> Skill:
         """
-        Obtain a specific skill by skill name
-        :param skill_name: Skill name
-        :return: Skill
+        通过技能名获得精确的技能
+        :param skill_name: 技能名
+        :return: 技能
         """
         return self._skills.get(skill_name)
 
     def retrieve_skill(self, desc: str, n_results: int = 2) -> list[Skill]:
         """
-        Obtain skills through the search engine
-        :param desc: Skill description
-        :return: Multiple skills
+        通过检索引擎获得技能
+        :param desc: 技能描述
+        :return: 技能（多个）
         """
-        return self._store.search(desc, n_results=n_results)["ids"][0]
+        return self._store.search(desc, n_results=n_results)['ids'][0]
 
     def retrieve_skill_scored(self, desc: str, n_results: int = 2) -> dict:
         """
-        Obtain skills through the search engine
-        :param desc: Skill description
-        :return: Dictionary consisting of skills and scores
+        通过检索引擎获得技能
+        :param desc: 技能描述
+        :return: 技能与分数组成的字典
         """
         return self._store.search(desc, n_results=n_results)
 
     def generate_skill_desc(self, skill: Skill) -> str:
         """
-        Generate descriptive text for each skill
+        为每个技能生成对应的描述性文本
         :param skill:
         :return:
         """
@@ -74,6 +78,7 @@ class SkillManager:
         logger.info(text)
 
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     manager = SkillManager()
     manager.generate_skill_desc(Action())
